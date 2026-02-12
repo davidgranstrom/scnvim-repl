@@ -3,6 +3,10 @@ local postwin = require 'scnvim.postwin'
 local path = require 'scnvim.path'
 local repl = {}
 
+-- TODO:
+-- Use uv.spawn instead of system when interacting with the dispatcher.
+-- Set current path when starting sclang (need to wait until process is started)
+
 repl.is_running = false
 
 function repl.get_sclang_pipe_app()
@@ -36,12 +40,14 @@ function repl.get_term_cmd()
 end
 
 
--- Actions
 sclang.on_init = nil
 sclang.on_exit = nil
 sclang.on_output = nil
+postwin.open = function() end
+postwin.close = function() end
+postwin.toggle = function() end
 
-local function format_text(text)
+local function format(text)
   text = vim.fn.substitute(text, '\\', '\\\\', 'g')
   text = vim.fn.substitute(text, '"', '\\\\"', 'g')
   text = vim.fn.substitute(text, '`', '\\\\`', 'g')
@@ -50,20 +56,18 @@ local function format_text(text)
   return text
 end
 
--- Overrides
 sclang.send = function(data, silent)
   silent = silent or false
   local cmd = not silent and ' -i ' or ' -s '
   if repl.is_running then
     local dispatcher = repl.get_sclang_dispatcher()
-    vim.fn.system(dispatcher .. cmd .. format_text(data))
+    vim.fn.system(dispatcher .. cmd .. format(data))
   end
 end
 
 sclang.start = function()
   local pipe_app = repl.get_sclang_pipe_app()
-  -- vim.fn.system(repl.get_term_cmd() .. ' ' .. pipe_app .. '&')
-  vim.fn.system(repl.get_term_cmd() .. ' ' .. pipe_app)
+  vim.fn.system(repl.get_term_cmd() .. ' ' .. pipe_app .. '&')
   repl.is_running = true
 end
 
@@ -79,9 +83,32 @@ sclang.recompile = function()
   vim.fn.system(dispatcher .. ' -s ""')
 end
 
+sclang.set_current_path = function()
+  if repl.is_running then
+    local curpath = vim.fn.expand '%:p'
+    curpath = vim.fn.escape(curpath, [[ \]])
+    curpath = string.format('SCNvim.currentPath = "%s"', curpath)
+    sclang.send(curpath, true)
+  end
+end
+
 return require('scnvim').register_extension {
   setup = function(ext_config, user_config)
     repl.term_cmd = ext_config.term_cmd
+
+    local id = vim.api.nvim_create_augroup('scnvim-repl', { clear = true })
+    vim.api.nvim_create_autocmd('VimLeavePre', {
+      group = id,
+      desc = 'Stop sclang on Nvim exit',
+      pattern = '*',
+      callback = sclang.stop,
+    })
+    vim.api.nvim_create_autocmd({ 'BufEnter', 'BufNewFile', 'BufRead' }, {
+      group = id,
+      desc = 'Set the document path in sclang',
+      pattern = { '*.scd', '*.sc', '*.quark' },
+      callback = sclang.set_current_path,
+    })
   end,
   health = function() end,
 }
