@@ -73,7 +73,7 @@ module SC
         rundir = Dir.pwd
         loop do
           begin
-            IO.popen("#{SC.sclang_path.chomp} -d #{rundir.chomp} -i scvim", "w") do |sclang|
+            IO.popen("#{SC.sclang_path.chomp} -d #{rundir.chomp} -i scnvim", "w") do |sclang|
               loop do
                 File.open(@@pipe_loc, "r") do |f|
                   x = f.read
