@@ -1,0 +1,87 @@
+local sclang = require 'scnvim.sclang'
+local postwin = require 'scnvim.postwin'
+local path = require 'scnvim.path'
+local repl = {}
+
+repl.is_running = false
+
+function repl.get_sclang_pipe_app()
+  local root_dir = path.get_plugin_root_dir('repl')
+  return path.concat(root_dir, 'ruby', 'start_pipe')
+end
+
+function repl.get_sclang_dispatcher()
+  if repl.dispatcher then
+    return repl.dispatcher
+  end
+  local root_dir = path.get_plugin_root_dir('repl')
+  repl.dispatcher = path.concat(root_dir, 'ruby', 'sc_dispatcher')
+  return repl.dispatcher
+end
+
+function repl.get_term_cmd()
+  if repl.term_cmd then
+    return repl.term_cmd
+  end
+  local system_name = path.get_system()
+  local term_cmd
+  if system_name == 'macos' then
+    term_cmd = 'open -a Terminal.app'
+  elseif system_name == 'linux' then
+    term_cmd = 'x-terminal-emulator -e $SHELL -ic'
+  else
+    return error('Not supported on this system')
+  end
+  return term_cmd
+end
+
+
+-- Actions
+sclang.on_init = nil
+sclang.on_exit = nil
+sclang.on_output = nil
+
+local function format_text(text)
+  text = vim.fn.substitute(text, '\\', '\\\\', 'g')
+  text = vim.fn.substitute(text, '"', '\\\\"', 'g')
+  text = vim.fn.substitute(text, '`', '\\\\`', 'g')
+  text = vim.fn.substitute(text, '\\$', '\\\\$', 'g')
+  text = '"' .. text .. '"'
+  return text
+end
+
+-- Overrides
+sclang.send = function(data, silent)
+  silent = silent or false
+  local cmd = not silent and ' -i ' or ' -s '
+  if repl.is_running then
+    local dispatcher = repl.get_sclang_dispatcher()
+    vim.fn.system(dispatcher .. cmd .. format_text(data))
+  end
+end
+
+sclang.start = function()
+  local pipe_app = repl.get_sclang_pipe_app()
+  -- vim.fn.system(repl.get_term_cmd() .. ' ' .. pipe_app .. '&')
+  vim.fn.system(repl.get_term_cmd() .. ' ' .. pipe_app)
+  repl.is_running = true
+end
+
+sclang.stop = function()
+  local dispatcher = repl.get_sclang_dispatcher()
+  vim.fn.system(dispatcher .. ' -q')
+  repl.is_running = false
+end
+
+sclang.recompile = function()
+  local dispatcher = repl.get_sclang_dispatcher()
+  vim.fn.system(dispatcher .. ' -k')
+  vim.fn.system(dispatcher .. ' -s ""')
+end
+
+return require('scnvim').register_extension {
+  setup = function(ext_config, user_config)
+    repl.term_cmd = ext_config.term_cmd
+  end,
+  health = function() end,
+}
