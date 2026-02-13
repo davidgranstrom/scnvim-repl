@@ -1,12 +1,9 @@
+local scnvim = require 'scnvim'
 local sclang = require 'scnvim.sclang'
 local postwin = require 'scnvim.postwin'
-local udp = require 'scnvim.udp'
+local socket = require 'scnvim.udp'
 local path = require 'scnvim.path'
 local repl = {}
-
--- TODO:
--- Use uv.spawn instead of system when interacting with the dispatcher.
--- Set current path when starting sclang (need to wait until process is started)
 
 repl.is_running = false
 
@@ -44,25 +41,31 @@ end
 sclang.on_init = nil
 sclang.on_exit = nil
 sclang.on_output = nil
+-- These functions could actually be overriden to toggle the external terminal
+-- via a system command.
 postwin.open = function() end
 postwin.close = function() end
 postwin.toggle = function() end
 
-local function format(text)
-  text = vim.fn.substitute(text, '\\', '\\\\', 'g')
-  text = vim.fn.substitute(text, '"', '\\\\"', 'g')
-  text = vim.fn.substitute(text, '`', '\\\\`', 'g')
-  text = vim.fn.substitute(text, '\\$', '\\\\$', 'g')
-  text = '"' .. text .. '"'
-  return text
+local function init_(dispatcher)
+  socket.start_server()
+  local cmd = string.format('SCNvim.port = %d', socket.port)
+  vim.system({dispatcher, '-s', cmd}):wait()
+  local curpath = vim.fn.expand '%:p'
+  curpath = vim.fn.escape(curpath, [[ \]])
+  cmd = string.format('SCNvim.currentPath = "%s"', curpath)
+  vim.system({dispatcher, '-s', cmd}):wait()
 end
 
 sclang.send = function(data, silent)
   silent = silent or false
-  local cmd = not silent and ' -i ' or ' -s '
+  local cmd = not silent and '-i' or '-s'
   if repl.is_running then
     local dispatcher = repl.get_sclang_dispatcher()
-    vim.fn.system(dispatcher .. cmd .. format(data))
+    if not socket.udp then
+      init_(dispatcher)
+    end
+    vim.system({dispatcher, cmd, data})
   end
 end
 
@@ -70,27 +73,25 @@ sclang.start = function()
   local pipe_app = repl.get_sclang_pipe_app()
   local term_cmd = repl.get_term_cmd()
   table.insert(term_cmd, pipe_app)
-  vim.system(term_cmd, { detach = true })
-  -- TODO: detect when sclang has actually started
+  vim.system(term_cmd, { detach = true }):wait()
   repl.is_running = true
-  local port = udp.start_server()
-  assert(port > 0, 'Could not start scnvim UDP server')
-  sclang.send(string.format('SCNvim.port = %d', port), true)
-  sclang.set_current_path()
 end
 
 sclang.stop = function()
   local dispatcher = repl.get_sclang_dispatcher()
-  vim.fn.system(dispatcher .. ' -q')
-  udp.stop_server()
+  vim.system({ dispatcher, '-q' }):wait()
+  socket.stop_server()
   repl.is_running = false
 end
 
 sclang.recompile = function()
   local dispatcher = repl.get_sclang_dispatcher()
-  vim.fn.system(dispatcher .. ' -k')
-  vim.fn.system(dispatcher .. ' -s ""')
-  sclang.send(string.format('SCNvim.port = %d', udp.port), true)
+  vim.system({dispatcher, '-k'}):wait()
+  vim.system({dispatcher, '-s', '""'}):wait()
+  if not socket.udp then
+    init_(dispatcher)
+  end
+  sclang.send(string.format('SCNvim.port = %d', socket.port), true)
   sclang.set_current_path()
 end
 
@@ -103,7 +104,31 @@ sclang.set_current_path = function()
   end
 end
 
-return require('scnvim').register_extension {
+sclang.poll_server_status = function()
+  local config = require'scnvim.config'
+  local cmd = string.format('SCNvim.updateStatusLine(%d)', config.statusline.poll_interval)
+  sclang.send(cmd, true)
+end
+
+sclang.generate_assets = function(on_done)
+  assert(repl.is_running, '[scnvim] sclang not running')
+  local config = require'scnvim.config'
+  local format = config.snippet.engine.name
+  local expr = string.format([[SCNvim.generateAssets("%s", "%s")]], path.get_cache_dir(), format)
+  sclang.eval(expr, on_done)
+end
+
+sclang.eval = function(expr, cb)
+  assert(repl.is_running, '[scnvim] sclang not running')
+  expr = vim.fn.escape(expr, '"')
+  local id = socket.push_eval_callback(cb)
+  local cmd = string.format('SCNvim.eval("%s", "%s");', expr, id)
+  sclang.send(cmd, true)
+end
+
+sclang.reboot = function() print('reboot is not implemented') end
+
+return scnvim.register_extension {
   setup = function(ext_config, user_config)
     repl.term_cmd = ext_config.term_cmd
 
