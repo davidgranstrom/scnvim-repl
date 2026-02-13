@@ -1,6 +1,6 @@
 # scnvim-repl
 
-Use an external terminal for the sclang REPL, like the classic `scvim` plugin.
+Use an external terminal as the sclang post window, like the classic `scvim` plugin.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ scnvim.load_extension 'repl'
 scnvim.setup {
   extensions = {
     repl = {
-      term_cmd = 'open -a Ghostty.app'
+      term_cmd = {'open', '-a', 'Ghostty.app'}
     },
   },
 }
@@ -37,10 +37,10 @@ scnvim.setup {
 
 ## License
 
-The ruby program is copied from the original [scvim](https://github.com/supercollider/scvim) project with minor modifications, see `ruby/COPYING` for the full the license (GPLv3).
+The ruby program is copied from the original [scvim](https://github.com/supercollider/scvim) repo with minor modifications, see `ruby/COPYING` for the full the license (GPLv3).
 
 ```
-scnvim-repl - Use an external terminal as the sclang REPL.
+scnvim-repl - Use an external terminal as the sclang post window.
 Copyright © 2026 David Granström
 
 This program is free software: you can redistribute it and/or modify
