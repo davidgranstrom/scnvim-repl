@@ -26,17 +26,14 @@ function repl.get_term_cmd()
     return repl.term_cmd
   end
   local system_name = path.get_system()
-  local term_cmd
   if system_name == 'macos' then
-    term_cmd = {'open', '-a', 'Terminal.app'}
+    return {'open', '-a', 'Terminal.app'}
   elseif system_name == 'linux' then
-    term_cmd = {'x-terminal-emulator', '-e', '$SHELL', '-ic'}
+    return {'x-terminal-emulator', '-e', '$SHELL', '-ic'}
   else
-    return error('Not supported on this system')
+    return error('Not (yet) supported on: ' .. tostring(system_name))
   end
-  return term_cmd
 end
-
 
 sclang.on_init = nil
 sclang.on_exit = nil
